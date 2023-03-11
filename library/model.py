@@ -1,77 +1,21 @@
-import matplotlib.pyplot as plt
-from mpl_toolkits import mplot3d
-from mpl_toolkits.mplot3d import Axes3D
-import CosmoBolognaLib as cbl
-from CosmoBolognaLib  import StringVector as sv
+
 import astropy.cosmology as asco
 from astropy.cosmology import FlatLambdaCDM
 from astropy.cosmology import funcs
 from astropy.io import fits
 from astropy.table import Table
 from astropy import units as u
-from astropy.cosmology import Planck18
 from scipy.integrate import quad
 
-font = {'family' : 'serif',
-        'weight' : 'normal',
-        'size'   : 20}
 
-plt.rc('font', **font)
-cosmo=cbl.Cosmology(cbl.CosmologicalModel__Planck18_)
-hhh=cosmo.hh()
-#print(hhh)
-cosmo.set_unit(True)
-area=6800
-voltot=cosmo.Volume(0.05,0.5,area)
-
-
-file_cat='./DR16.flux.SDSS.0.05<z<0.5.zerr6e-4.dat'
-z1,flux1=np.genfromtxt(file_cat,skip_header=1,unpack=True)
-file_cat='./DR16.flux.BOSS.0.05<z<0.5.zerr6e-4.dat'
-z2,flux2=np.genfromtxt(file_cat,skip_header=1,unpack=True)
-z=np.append(z1,z2)
-#flux=np.append(flux1,flux2)
-#idf=np.where(flux>0)
-#z=z[idf]
-#flux=flux[idf]
-#mg=22.5 - (2.5*np.log10(flux))
-#mod_dist=Planck18.distmod(z).value
-#Mag=mg-mod_dist+(2.5*np.log10(1.1))-(5*np.log10(hhh))
-#idmag=np.where(Mag>-26)
-#Mag=Mag[idmag]
-#z=z[idmag]
-
-histz,bins=np.histogram(z,1000)
-mean=np.empty(len(histz),dtype=float)
-dndz=np.empty(len(histz),dtype=float)
-binsize=np.empty(len(histz),dtype=float)
-for i in range(len(histz)):
-    mean[i]=(bins[i]+bins[i+1])*0.5
-    dndz[i]=histz[i]/(bins[i+1]-bins[i])
-    binsize[i]=np.abs(bins[i+1]-bins[i])
-
-
-    
-dndz=dndz/voltot
-dn=histz*(mean**2)
-#dn=dn/voltot
-
-plt.figure()
-plt.plot(mean,dndz)
-plt.title('dndz')
-#plt.show()
-
-plt.figure()
-plt.plot(mean,dn)
-plt.title('dn')
 
 def mod_dist(x):
     return 5*np.log10(cosmo.D_L(x))+25
 
 def lum_func(x):
    
-    phi=0.0093#*(hhh**(3))
-    M=-20.71#+(5*np.log10(hhh))
+    phi=0.0093
+    M=-20.71
     a=-1.26
     expo=np.exp(-10**(0.4*(M-x)))
     power=10**(0.4*(M-x)*(a+1))
@@ -83,38 +27,13 @@ def cumul_lum(mag):
 vec_cum=np.vectorize(cumul_lum)
 
 
-mod_dist1=np.asarray([mod_dist(i) for i in mean])
-Mag1=22.29-mod_dist1-(-2.5*np.log10(1.1))#+(5*np.log10(hhh))
-
-#nz=vec_cum(Mag1)*(yyy**2)
-deltaz=lum_func(Mag1)/vec_cum(Mag1) 
-
-a=np.sum(deltaz*dndz*binsize)/np.sum(dndz*binsize)
-print(a)
-
-b=np.sum(deltaz*dn*binsize)/np.sum(dn*binsize)
-print(b)
-
-plt.figure(figsize=(10,8))
-plt.plot(mean,deltaz,color='r',label='delta(z)')
-#plt.plot(yyy,nz,label='z^2 n(z)')
-plt.xlim(0.05,0.5)
-plt.xlabel('z',fontsize=15)
-plt.ylabel(r'$\delta(z)$',fontsize=15)
-#plt.ylim(0,6)
-#plt.legend()
-plt.savefig('./immagini/surf.mod.22.29.png')
-plt.show()
 
 def maglim(z):
     mod_dist1=mod_dist(z)
-    return 22.29-mod_dist1+(2.5*np.log10(1.1))#+(5*np.log10(hhh))
+    return 22.29-mod_dist1+(2.5*np.log10(1.1))
    
    
-def maglimup(z):
-    mod_dist=Planck18.distmod(z).value    
-    return 13.93-mod_dist-(5*np.log10(hhh))+(2.5*np.log10(1.1))
-   
+
 
 def den(z):
     return (z**2) * cumul_lum(maglim(z))
@@ -124,17 +43,12 @@ def num(z):
 
 
 
-def integral(z1,z2):
+def compute_deltaz(z1,z2):
     nume=quad(num,z1,z2)[0]
     deno=quad(den,z1,z2)[0]
     return nume/deno
 
-#print(integral(0.016,0.667))
-print(integral(0.05,0.5))
-#print(integral(0.1,0.4))
-#print(integral(0.05,0.4))
-#print(integral(0.05,0.3))
-#print(integral(0.05,0.6))
+
 
 
 
@@ -161,10 +75,7 @@ from scipy.optimize import curve_fit
 from astropy import constants as const
 from tqdm import tqdm
 
-cosmology=cbl.Cosmology(cbl.CosmologicalModel__Planck18_)
-cosmology.set_unit(False)
 
-file_data='./data/hope/dataformodel.whl15.match.mixsdssboss.meanallmembr>2.ramean.mselect.z<0.5.RL>10.4mem.dat' #file velocity selected galaxies
 zn,r500n,logm500n,c500n=np.genfromtxt(file_data,skip_header=1,unpack=True)
 m500n=10**(logm500n)
 rho_cn=Planck18.critical_density(zn).to('kg/m3')
@@ -242,38 +153,6 @@ for i in range(len(popt2)):
 chi2=np.sum((loghist2-lin2(logbin2,*popt2))**2/error2**2)   
 print(chi2/21.)
 
-plt.figure(figsize=(10,8))
-plt.plot(logbin2,lin2(logbin2,*popt2))
-plt.errorbar(logbin2,loghist2,error2)
-
-zeros=np.zeros(len(logbin2))
-plt.figure(figsize=(10,8))
-plt.plot(logbin2,zeros)
-plt.errorbar(logbin2,loghist2-lin2(logbin2,*popt2),error2)
-plt.show()
-
-
-
-init3=[-693,98,3.5]
-popt3,pcov3=curve_fit(lin3,logbin3,loghist3,init3,sigma=error3,absolute_sigma=False,maxfev=2000)
-
-label=['a','b','c','d','e']
-error_fit=np.empty(len(popt3),dtype=float)
-for i in range(len(popt3)):
-    error_fit[i]=np.sqrt(pcov3[i,i])
-    print(label[i],':',popt3[i],'pm',np.sqrt(pcov3[i,i]))
-chi2=np.sum((loghist3-lin3(logbin3,*popt3))**2/error3**2)   
-print(chi2/27.)
-
-plt.figure(figsize=(10,8))
-plt.plot(logbin3,lin3(logbin3,*popt3))
-plt.errorbar(logbin3,loghist3,error3)
-
-zeros=np.zeros(len(logbin3))
-plt.figure(figsize=(10,8))
-plt.plot(logbin3,zeros)
-plt.errorbar(logbin3,loghist3-lin3(logbin3,*popt3),error3)
-plt.show()
 
 
 def g_c5(c):
@@ -366,52 +245,7 @@ def fit_func(rr,a):
 
 
 
-bin_dist=np.array([0.4930291580287251 ,1.495565328569689, 2.503292134133705 ,3.511846551638351])
-err_bin_dist=np.array([0.28833556083756528 ,0.28145382259167817, 0.2908587469997078 ,0.28876764753570244])
 
-
-vmm=np.asarray([ -4.65115, -11.1562 , -10.8854 , -17.7519 ])
-evmm=np.asarray([3.57436, 6.51726, 7.73587, 8.38579])#vmean
-
-vmc=[ -4.88197 , -9.52801 ,-18.8464,  -15.8996 ]
-evmc=[3.62047, 6.28544, 7.7041 , 8.21468]#raclust
-
-initred=[1]
-poptred,pcovred=curve_fit(fit_func,bin_dist,vmm,initred,sigma=evmm,absolute_sigma=False,bounds=(0,10),maxfev=2000)
-
-print(poptred,'pm',np.sqrt(pcovred))
-    
-chi2=(np.sum((vmm-fit_func(bin_dist,poptred))**2/(evmm**2)))/3.
-
-xx=np.linspace(0.001,4,100)
-plt.figure(figsize=(20,10))
-plt.plot(xx,fit_func(xx,poptred),label='Fit')
-plt.plot(xx,fit_func(xx,1.0),color='r',linestyle='--',label='GR')
-plt.plot(xx,fit_func(xx,4./3.),color='black',linestyle='--',label='f(R)')
-plt.fill_between(xx,fit_func(xx,poptred+np.sqrt(pcovred[0,0])),fit_func(xx,poptred-np.sqrt(pcovred[0,0])),alpha=0.2)
-plt.errorbar(bin_dist,vmm,evmm,err_bin_dist,color='g',marker='o',linestyle='',label='a = 0.62 pm 0.17 ; chi2/ndof=0.66')
-plt.errorbar(bin_dist,vmc,evmc,err_bin_dist,color='purple',marker='o',linestyle='',label='a = 0.62 pm 0.17 ; chi2/ndof=0.66')
-plt.xlim(np.min(xx),np.max(xx))
-plt.legend()
-plt.title('Fit curve_fit, minimo chi2')
-#plt.savefig('./immagini/tesi/whl15.match.mixsdssboss.meanallmembr>2.ramean.mselect.z<0.5.RL>10.4mem.curvefit.png')
-plt.show()
-
-aaa=np.linspace(-0.5,1.5,100)
-chi2a=np.empty(len(aaa),dtype=float)
-for i in range(len(aaa)):
-    chi2a[i]=(np.sum((vmm-fit_func(bin_dist,aaa[i]))**2/(evmm**2)))/3.
-
-print(np.min(chi2a))
-one=np.ones(len(aaa))    
-plt.figure(figsize=(20,10))
-plt.plot(aaa,chi2a,label='chi2/ndof min = 0.66')
-plt.plot(aaa,one,color='r',linestyle='--')
-plt.xlim(np.min(aaa),np.max(aaa))
-plt.legend()
-plt.title('test chi2')
-#plt.savefig('./immagini/tesi/whl15.match.mixsdssboss.meanallmembr>2.ramean.mselect.z<0.5.RL>10.4mem.testchi2.png')
-plt.show()
 
 ##### markov-chain #####
 
@@ -446,16 +280,7 @@ def lnPost(theta,x,y,yerr):
    
     return prior + lnLike(theta,x,y,yerr)
 
-npar=1
-start=np.asarray([1.0])
-xx=np.linspace(0.001,4,1000)
-plt.figure(figsize=(10,10))
-plt.title('init')
-plt.errorbar(bin_dist,vmm,evmm,err_bin_dist,color='g',marker='o',linestyle='',label='zclust<0.5')
-plt.errorbar(bin_dist,vmc,evmc,err_bin_dist,color='purple',marker='o',linestyle='',label='zclust<0.5')
-plt.plot(xx,fit_func(xx,start),color='r')
-plt.xlim(np.min(xx),np.max(xx))
-plt.show()
+
 
 if np.isfinite(lnPrior(start)):
     print('Start value ok!!')
@@ -485,13 +310,6 @@ print('mean acc. fraction:',np.mean(sampler.acceptance_fraction))
 
 
 samples = sampler.get_chain()
-
-plt.figure(figsize=(10,6))
-plt.xlim(0,len(samples))
-plt.xlabel('step')
-plt.ylabel('a')
-plt.plot(samples[:, :, 0], "k", alpha=0.3)
-plt.show()
 
 
 
@@ -621,18 +439,6 @@ def model_DGP():
 
 dgpnocorr,dgptd,dgp=model_DGP()
       
-plt.figure(figsize=(14,10))
-plt.errorbar(bin_dist,vmm,evmm,err_bin_dist,color='purple',marker='o',linestyle='',label='a= 0.81 pm 0.25; chi2/ndof = 0.33 ')
-#plt.errorbar(bin_dist,vmc,evmc,err_bin_dist,color='purple',marker='o',linestyle='',label='a= 0.62 pm 0.21; chi2/ndof = 0.66 ')
-plt.plot(xx,fit_func(xx,fit_res),label='FIT')
-plt.fill_between(xx,fit_func(xx,fit_up),fit_func(xx,fit_low),alpha=0.2)
-plt.plot(xx,fit_func(xx,1),color='black',linestyle='--',label='GR')
-plt.plot(xx,fit_func(xx,4./3.),color='r',linestyle='--',label='f(R)')
-plt.plot(rr,dgp,color='g',linestyle='--',label='DGP')
-plt.xlim(np.min(xx),np.max(xx))
-plt.legend()
-plt.title('Fit chain, gaussian likelihood')
-plt.savefig('./immagini/tesi/whl15fit.massselect.chain.png')
-plt.show()
+
 
 

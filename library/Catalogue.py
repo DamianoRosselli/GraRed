@@ -225,6 +225,27 @@ class Cluster(Catalogue):
             return self._data.iloc[objid]    
         else:
             raise ValueError('give a key or objID to select somenthing in self._data')
+            
+            
+    def compute_cluster_center(self, galaxy_data, v_cut=2500, r_cut=1, **kwargs):      
+        e=1 
+        while e > 1.e-3:
+
+            r=[ut.dist_between_2obj(row.RA,row.Dec,galaxy_data.RA,galaxy_data.Dec,**kwargs) for row in self.data.itertuples() ]
+            v=[ut.vlos_center(row.redshift,galaxy_data.redshift) for row in self.data.itertuples()]
+            
+            idv=np.where((np.abs(v)<2500.)&(r<=1))
+	        decbo2=np.append(decbo[idv],dec[i])
+	        rabo2=np.append(rabo[idv],ra[i])
+	        zbo2=np.append(zbo[idv],z[i])
+
+	        centre_ra=np.append(centre_ra,np.mean(rabo2))
+	        centre_dec=np.append(centre_dec,np.mean(decbo2))
+	        centre_z=np.append(centre_z,np.mean(zbo2))
+	        num=np.append(num,len(rabo2)) np.median(max number point for iteration)
+            e=np.mean(oldcenter, newcenter)
+
+    
 
             
     def set_delta(self,delta):
@@ -268,36 +289,7 @@ class Cluster(Catalogue):
         return self._data
 
         
-                
 
-
-
-
-
-
-
-
-    
-#TROVA MEtodo più veloce e fai più cicli fino a convergenza
-	# thsi is a function 
-    r=ut.dist_between_2obj(ra[i],dec[i],dm[i],rabo,decbo,r500fr[i]) for row in data.rows
-	v=ut.vlos_center(z[i],zbo) for z in data[z]
-	idv=np.where((np.abs(v)<2500.)&(r<=1))
-
-e=1 
-while e > 1.e-3:
-    e=np.mean(oldcenter, newcenter)
-
-
-	decbo2=np.append(decbo[idv],dec[i])
-	rabo2=np.append(rabo[idv],ra[i])
-	zbo2=np.append(zbo[idv],z[i])
-
-	centre_ra=np.append(centre_ra,np.mean(rabo2))
-	centre_dec=np.append(centre_dec,np.mean(decbo2))
-	centre_z=np.append(centre_z,np.mean(zbo2))
-	num=np.append(num,len(rabo2)) np.median(max number point for iteration)
-	
 class Voids(Catalogue): 
     """ Voids Catalogue Object"""
     _object_type='Voids' 
