@@ -16,13 +16,16 @@ class Catalogue(abc.ABC):
     _object_type=''
 	#class attrbute astropy cosmology
 
-    def __init__(self,ra,dec,redshift,mass=None,radius=None,cosmo=asco.Planck18):
+    def __init__(self,ra,dec,redshift,redshift_err=None, mass=None,radius=None,cosmo=asco.Planck18):
+        
         self._objID=np.arange(len(ra))
         self._number_objects=len(ra)
         self._ra=ra
         self._dec=dec
         self._z=redshift
-           
+
+        if redshift_err is not None:
+            self._redshift_err=redshift_err  
             
         if mass is not None:
             self._mass=mass
@@ -62,6 +65,10 @@ class Catalogue(abc.ABC):
         return self._cosmology
 
     @property
+    def objID(self):
+        return self._objID
+
+    @property
     def ra(self):
         return self._ra
 
@@ -94,9 +101,9 @@ class Galaxies(Catalogue):
     """ Galaxy Catalogue Object"""
     object_type='Galaxy' 
 
-    def __init__(self,ra,dec,redshift,mass=None,radius=None,mag=None,cosmo=asco.Planck18):
+    def __init__(self,ra,dec,redshift,redshift_err=None,mass=None,radius=None,mag=None,cosmo=asco.Planck18):
             
-        super().__init__(self,ra,dec,redshift,mass,radius,cosmo=asco.Planck18)
+        super().__init__(self,ra,dec,redshift,redshift_err,mass,radius,cosmo=asco.Planck18)
         
         if mag is not None:
             self._magnitude = mag
@@ -104,12 +111,17 @@ class Galaxies(Catalogue):
         self._data=pd.DataFrame({'RA':self._ra,
                                 'Dec':self._dec,
                                 'redshift': self._z,
+                                'redshift_err': self._redshift_err,
                                 'Radius':self._radius,
                                 'Mass':self._mass,
                                 'magnitude': self._magnitude,
                                 'Dc':  self._comoving_distance,
-                                'Dm': self._comoving_transverse_distance})
+                                'Dm': self._comoving_transverse_distance,
+                                'ID': self._objID})
 
+    #AION TO CALCULATE THE PARAMETRS THAT CORRECT FOR SURFACE BRIGHTNESS MODULATION
+    
+    
     def get(self,key=None,objid=None):
         if key is not None and objid is None:
             return self._data.loc[:,key]
@@ -139,9 +151,11 @@ class Cluster(Catalogue):
     _object_type='Cluster'
 	
 
-    def __init__(self,ra,dec,redshift,mass=None,radius=None,concentration=None,fr0=None,compute_radius=False,compute_conc=False,convert_to_fr=False,is_crit=True,seed=1234,delta=500,cosmo=asco.Planck18,gravity='GR'):
+    def __init__(self,ra,dec,redshift,redshift_err=None,mass=None,radius=None,concentration=None,fr0=None,
+                compute_radius=False,compute_conc=False,convert_to_fr=False,is_crit=True,
+                seed=1234,delta=500,cosmo=asco.Planck18,gravity='GR'):
             
-        super().__init__(self,ra,dec,redshift,mass,radius,cosmo=asco.Planck18)
+        super().__init__(self,ra,dec,redshift,redshift_err,mass,radius,cosmo=asco.Planck18)
             
         set_Delta(delta)
         set_gravitymodel(gravity)
@@ -183,11 +197,13 @@ class Cluster(Catalogue):
         self._data=pd.DataFrame({'RA':self._ra,
                                 'Dec':self._dec,
                                 'redshift': self._z,
+                                'redshift_err': self._redshift_err,
                                 'R_'+str(delta):self._radius,
                                 'M_'+str(delta):self._mass,
                                 'c_'+str(delta):self._concentration,
                                 'Dc':  self._comoving_distance,
-                                'Dm': self._comoving_transverse_distance})
+                                'Dm': self._comoving_transverse_distance,
+                                'ID': self._objID})
 
 
                                           
@@ -227,23 +243,39 @@ class Cluster(Catalogue):
             raise ValueError('give a key or objID to select somenthing in self._data')
             
             
-    def compute_cluster_center(self, galaxy_data, v_cut=2500, r_cut=1, **kwargs):      
-        e=1 
-        while e > 1.e-3:
+    def compute_cluster_center(self, Ragal, DECgal, Zgal, Zerr_gal=None, radians_clust=False, 
+                               weight_mean=False, radians_gal=False, v_cut=2500., r_cut=1., **kwargs):      
 
-            r=[ut.dist_between_2obj(row.RA,row.Dec,galaxy_data.RA,galaxy_data.Dec,**kwargs) for row in self.data.itertuples() ]
-            v=[ut.vlos_center(row.redshift,galaxy_data.redshift) for row in self.data.itertuples()]
-            
-            idv=np.where((np.abs(v)<2500.)&(r<=1))
-	        decbo2=np.append(decbo[idv],dec[i])
-	        rabo2=np.append(rabo[idv],ra[i])
-	        zbo2=np.append(zbo[idv],z[i])
+        if not radians_clust:
+            self._data['RA_rad']= np.radians(self._data.RA)
+            self._data['Dec_rad']= np.radians(self._data.RA)
+        if not radians_gal:
+            RAgal_rad= np.radians(RAgal)
+            DECgal_rad= np.radians(DECgal)
 
-	        centre_ra=np.append(centre_ra,np.mean(rabo2))
-	        centre_dec=np.append(centre_dec,np.mean(decbo2))
-	        centre_z=np.append(centre_z,np.mean(zbo2))
-	        num=np.append(num,len(rabo2)) np.median(max number point for iteration)
-            e=np.mean(oldcenter, newcenter)
+        r=[ut.dist_between_2obj(row.RA_rad,row.DEC_rad,RAgal_rad,DECgal_rad,**kwargs) for row in self._data.itertuples()]
+        v=[ut.vlos_center(row.redshift,Zgal) for row in self._data.itertuples()]
+        
+        mask_coord=[np.logical_and(r[i]<r_cut,v[i]<v_cut) for i in range(len(r))]
+
+        ragal_select=[RAgal[mask] for mask in mask_coord]
+        zgal_select=[Zgal[mask] for mask in mask_coord]
+        decgal_select=[DECgal[mask] for mask in mask_coord]
+        
+        self._data['RA_New']=[np.mean(ra_clust,ragalsel) for i,(ra_clust,ragalsel) in enumerate(zip(self._data.RA,ragal_select))]
+        self._data['DEC_New']=[np.mean(dec_clust,decgalsel) for i,(dec_clust,decgalsel) in enumerate(zip(self._data.DEC,decgal_select))]
+        self._data['N_New_coord']=[len(s)+1 for s in ragal_select]
+
+        if weight_mean:
+            if Zerr_gal is None:
+                raise ValueError('need redshift errors of Galaxies to compute weighted mean')
+            else:
+                z_arr=[np.append(z_clust,zgalsel) for i,(z_clust,zgalsel) in enumerate(zip(self._data.redshift,zgal_select))]
+                zgalerr_select=[Zerr_gal[mask] for mask in mask_coord]
+                zerr_arr=[np.append(zerr_clust,zerrgalsel) for i,(zerr_clust,zerrgalsel) in enumerate(zip(self._data.redshift_err,zgalerr_select))]
+                self._data['Z_New']=[np.average(z,weights=zerr) for i,(z,zerr) in enumerate(zip(z_arr,zerr_arr))]
+        else:
+            self._data['Z_New']=[np.mean(z_clust,zgalsel) for i,(z_clust,zgalsel) in enumerate(zip(self._data.redshift,zgal_select))]          
 
     
 

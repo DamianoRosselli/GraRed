@@ -4,6 +4,8 @@ import scipy
 from scipy.special import erf
 from scipy.optimize import fsolve,root
 
+light_vel=cst.c.to('km/s').value
+
 def g(c):
     return np.log(1+c)-(c/(1+c))
 
@@ -14,7 +16,12 @@ def c500_inter(x,m5,m2,c2):
 def vlos_center(z1,z2):
     # z1 cluster center redshift, z2 galaxy redshift
     vl=(np.log(1+z2)-np.log(1+z1))
-    return vl*cst.c.to('km/s').value
+    return vl*light_vel
+
+def vlos_err(z1,z2,dz1,dz2):
+    err1=dz1/(1+z1)
+    err2=dz2/(1+z2)
+    return (err1+err2)*light_vel
 
 def comoving_distance(z,cosmology):
     return cosmology.comoving_distance(z)
