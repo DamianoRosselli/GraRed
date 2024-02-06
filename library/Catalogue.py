@@ -143,7 +143,9 @@ class Galaxies(Catalogue):
 
 class MemberGalaxies(Catalogue): 
     """  Member Galaxy Catalogue Object"""
-    _object_type='MemberGalaxy'   
+    _object_type='MemberGalaxy'  
+
+    #add compute memership probability 
     	
 class Cluster(Catalogue):
     """ Cluster Catalogue Object"""
@@ -243,39 +245,39 @@ class Cluster(Catalogue):
             raise ValueError('give a key or objID to select somenthing in self._data')
             
             
-    def compute_cluster_center(self, Ragal, DECgal, Zgal, Zerr_gal=None, radians_clust=False, 
-                               weight_mean=False, radians_gal=False, v_cut=2500., r_cut=1., **kwargs):      
+    def compute_cluster_center(self, galaxy_data, radians=False, v_cut=2500., r_cut=1., **kwargs):      
+        
+        RAgal = [row.RA for row in galaxy_data.itertuples()]
+        DECgal = [row.Dec for row in galaxy_data.itertuples()]
+        Zgal = [row.redshift for row in galaxy_data.itertuples()]
 
-        if not radians_clust:
-            self._data['RA_rad']= np.radians(self._data.RA)
-            self._data['Dec_rad']= np.radians(self._data.RA)
-        if not radians_gal:
-            RAgal_rad= np.radians(RAgal)
-            DECgal_rad= np.radians(DECgal)
+        if not radians:
+            self._data['RA rad']= np.radians(self._data.RA)
+            self._data['Dec rad']= np.radians(self._data.RA)
+            RAgal= np.radians(RAgal)
+            DECgal= np.radians(DECgal)
 
-        r=[ut.dist_between_2obj(row.RA_rad,row.DEC_rad,RAgal_rad,DECgal_rad,**kwargs) for row in self._data.itertuples()]
+        r=[ut.dist_between_2obj(row.RA,row.DEC,RAgal,DECgal,**kwargs) for row in self._data.itertuples()]
         v=[ut.vlos_center(row.redshift,Zgal) for row in self._data.itertuples()]
-        
-        mask_coord=[np.logical_and(r[i]<r_cut,v[i]<v_cut) for i in range(len(r))]
 
-        ragal_select=[RAgal[mask] for mask in mask_coord]
-        zgal_select=[Zgal[mask] for mask in mask_coord]
-        decgal_select=[DECgal[mask] for mask in mask_coord]
+        dat=pd.DataFrame({'dist':r,
+                          'V':v,
+                          'IDclust': np.sort([self._objID for i in RAgal])})
+                          #add ragal dec gal
         
-        self._data['RA_New']=[np.mean(ra_clust,ragalsel) for i,(ra_clust,ragalsel) in enumerate(zip(self._data.RA,ragal_select))]
-        self._data['DEC_New']=[np.mean(dec_clust,decgalsel) for i,(dec_clust,decgalsel) in enumerate(zip(self._data.DEC,decgal_select))]
-        self._data['N_New_coord']=[len(s)+1 for s in ragal_select]
 
-        if weight_mean:
-            if Zerr_gal is None:
-                raise ValueError('need redshift errors of Galaxies to compute weighted mean')
-            else:
-                z_arr=[np.append(z_clust,zgalsel) for i,(z_clust,zgalsel) in enumerate(zip(self._data.redshift,zgal_select))]
-                zgalerr_select=[Zerr_gal[mask] for mask in mask_coord]
-                zerr_arr=[np.append(zerr_clust,zerrgalsel) for i,(zerr_clust,zerrgalsel) in enumerate(zip(self._data.redshift_err,zgalerr_select))]
-                self._data['Z_New']=[np.average(z,weights=zerr) for i,(z,zerr) in enumerate(zip(z_arr,zerr_arr))]
-        else:
-            self._data['Z_New']=[np.mean(z_clust,zgalsel) for i,(z_clust,zgalsel) in enumerate(zip(self._data.redshift,zgal_select))]          
+        dat=dat[np.abs(dat.V)<=v_cut & dat.dist<=r_cut]
+        
+        count=dat.groupby('IDclust').count()
+        mean_pos=dat.groupby('IDclust')[['RAgal','DECgal']].mean()
+
+
+
+
+        decbo2=np.append(decbo[idv],dec[i])
+        centre_ra=np.append(centre_ra,np.mean(rabo2))
+        num=np.append(num,len(rabo2)) 
+            
 
     
 

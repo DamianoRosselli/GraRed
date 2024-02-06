@@ -14,8 +14,8 @@ def mod_dist(x):
 
 def lum_func(x):
    
-    phi=0.0093
-    M=-20.71
+    phi=0.0093 da riscalare per h φ∗(h) = φ∗(h = 1)h3. 
+    M=-20.71 da riscalare per h M∗(h) = M∗(h = 1) + 5 log10 h
     a=-1.26
     expo=np.exp(-10**(0.4*(M-x)))
     power=10**(0.4*(M-x)*(a+1))
