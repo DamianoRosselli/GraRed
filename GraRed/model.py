@@ -5,47 +5,51 @@ from astropy.cosmology import funcs
 from astropy.io import fits
 from astropy.table import Table
 from astropy import units as u
-from scipy.integrate import quad
+import math
+import operator
+import os
+import numpy as np
+from scipy.integrate import quad,dblquad,nquad
+from scipy.optimize import curve_fit
+from astropy import constants as const
 
 
 
-def mod_dist(x):
-    return 5*np.log10(cosmo.D_L(x))+25
 
-def lum_func(x):
+def mod_dist(z,cosmo):
+    return 5 * np.log10((1 + z) * cosmo.comoving_distance(z).value) + 25
+
+def lum_func(x,cosmo):
    
-    phi=0.0093 da riscalare per h φ∗(h) = φ∗(h = 1)h3. 
-    M=-20.71 da riscalare per h M∗(h) = M∗(h = 1) + 5 log10 h
+    phi=0.0093 * cosmo.h**3 
+    M=-20.71 + 5*np.log10(cosmo.h) 
     a=-1.26
     expo=np.exp(-10**(0.4*(M-x)))
     power=10**(0.4*(M-x)*(a+1))
     return 0.4*np.log(10)*phi*power*expo
 
-def cumul_lum(mag):
-    return quad(lum_func,-100,mag)[0]
+def cumul_lum(mag,cosmo):
+    return quad(lum_func,-100,mag,args=(cosmo))[0]
 
-vec_cum=np.vectorize(cumul_lum)
+def vec_cum_lum():
+    return np.vectorize(cumul_lum)
 
 
-
-def maglim(z):
-    mod_dist1=mod_dist(z)
-    return 22.29-mod_dist1+(2.5*np.log10(1.1))
+def maglim(z,cosmo,survey_lim_mag):
+    mod_dist1=mod_dist(z,cosmo)
+    return survey_lim_mag-mod_dist1+(2.5*np.log10(1.1))
    
    
-
-
-def den(z):
+def den_SB(z):
     return (z**2) * cumul_lum(maglim(z))
 
-def num(z):
+def num_SB(z):
     return (z**2) *  lum_func(maglim(z))
 
 
-
 def compute_deltaz(z1,z2):
-    nume=quad(num,z1,z2)[0]
-    deno=quad(den,z1,z2)[0]
+    nume=quad(num_SB,z1,z2)[0]
+    deno=quad(den_SB,z1,z2)[0]
     return nume/deno
 
 
@@ -53,27 +57,7 @@ def compute_deltaz(z1,z2):
 
 
 
-import math
-import operator
-import emcee
-import os
-import numpy as np
-import matplotlib.pyplot as plt
-from mpl_toolkits import mplot3d
-from mpl_toolkits.mplot3d import Axes3D
-import CosmoBolognaLib as cbl
-from CosmoBolognaLib  import StringVector as sv
-import astropy.cosmology as asco
-from astropy.cosmology import FlatLambdaCDM
-from astropy.cosmology import funcs
-from astropy.io import fits
-from astropy.table import Table
-from astropy import units as u
-from astropy.cosmology import Planck18
-from scipy.integrate import quad,dblquad,nquad
-from scipy.optimize import curve_fit
-from astropy import constants as const
-from tqdm import tqdm
+
 
 
 zn,r500n,logm500n,c500n=np.genfromtxt(file_data,skip_header=1,unpack=True)

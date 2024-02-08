@@ -21,7 +21,7 @@ def vlos_center(z1,z2):
 def vlos_err(z1,z2,dz1,dz2):
     err1=dz1/(1+z1)
     err2=dz2/(1+z2)
-    return (err1+err2)*light_vel
+    return np.sqrt(err1**2+err2**2)*light_vel
 
 def comoving_distance(z,cosmology):
     return cosmology.comoving_distance(z)
@@ -49,7 +49,7 @@ def dist_between_2obj(ra,dec,ra2,dec2,dm1=None,r5=None,Mpc=True,arcsec=False,nor
             d=theta*dm1
 
     elif not Mpc and arcesc:
-        d=theta** 206264.806
+        d= theta** 206264.806
         
     if not normalized:
         return d
@@ -58,6 +58,15 @@ def dist_between_2obj(ra,dec,ra2,dec2,dm1=None,r5=None,Mpc=True,arcsec=False,nor
             raise ValueError('give the radius to normalize the distances')
         else:
             return d/r5
+
+
+def P2mitchell(fr0,redshift,cosmology):
+    fracomega=cosmology.Ode0/cosmology.Om0
+    c1c2=-1*((3*(1+4*fracomega))**2)*fr0
+    mR=1./(3*(((1+redshift)**3)+4*fracomega))
+    fr=-1*c1c2*(mR**2)
+    p2=1.503*np.log10((np.abs(fr)/(1+redshift)))+21.64
+    return p2
 
 
 def convert_concentration(mass,redshift,fr0,cosmology):
@@ -94,6 +103,7 @@ def convert_mass_GRtofR(mass,redshift,fr0,cosmology):
     return mfr
 
 def halo_radius(mass,redshift,delta,cosmology,is_crit):
+    
     if is_crit:
         rhoc=cosmology.critical_density(redshift).value()
     else:
@@ -104,16 +114,7 @@ def halo_radius(mass,redshift,delta,cosmology,is_crit):
     return np.power((mass*3)/c,1./3.)
     
 
-def P2mitchell(fr0,redshift,cosmology):
-    fracomega=cosmology.Ode0/cosmology.Om0# use astropy
-    c1c2=-1*((3*(1+4*fracomega))**2)*fr0
-    mR=1./(3*(((1+redshift)**3)+4*fracomega))
-    fr=-1*c1c2*(mR**2)
-    p2=1.503*np.log10((np.abs(fr)/(1+redshift)))+21.64
-    return p2
-
-
-def compute_c500(z,m500,covert=None):
+def compute_c500(z,m500,seed=1234, covert=None):
 
     logM_min=np.log10(np.min(m500))
     logM_max=np.log10(np.max(m500))

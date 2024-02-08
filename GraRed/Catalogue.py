@@ -6,17 +6,26 @@ from astropy.cosmology import funcs
 from astropy.io import fits
 from astropy.table import Table
 from astropy import units as u
-from astropy import costants as cst
+from astropy import constants as cst
 from . import utils as ut
 import abc
 
 
 class Catalogue(abc.ABC): 
-    """ General Catalogue Class """
+    
+    """ General Catalogue Class
+    ra: numpy array containing Right ascension of the objects
+    dec: numpy array containing Declination of the objects
+    redshift: numpy array containing redshift of the objects
+    cosmo: astropy.cosmology object, default is Planck18
+    redshift_err: Optional numpy array containing the errors on the redshift of the objects 
+    mass: Optional numpy array containing the masses of the objects 
+    radius: Optional numpy array containing the characteristic radius of the objects """
+
     _object_type=''
 	#class attrbute astropy cosmology
 
-    def __init__(self,ra,dec,redshift,redshift_err=None, mass=None,radius=None,cosmo=asco.Planck18):
+    def __init__(self,ra,dec,redshift, cosmo=asco.Planck18, redshift_err=None, mass=None,radius=None):
         
         self._objID=np.arange(len(ra))
         self._number_objects=len(ra)
@@ -26,33 +35,43 @@ class Catalogue(abc.ABC):
 
         if redshift_err is not None:
             self._redshift_err=redshift_err  
-            
+        else:
+            self._redshift_err=None
+
         if mass is not None:
             self._mass=mass
+        else:
+            self._mass = None
                 
         if radius is not None:
             self._radius=radius
+        else:
+            self._radius = None
 
-        set_cosmology(cosmo)
-        self._comoving_distance=compute_comoving_distance(self._z,self._cosmology)
-        self._comoving_transverse_distance=compute_transverse_comoving_distance(self._z,self._cosmology)
+        if cosmo is None:
+            raise ValueError('cosmology cannot be None')
+        else:
+            self._set_cosmology(cosmo)
+
+        self._comoving_distance=self._compute_comoving_distance(self._z,self._cosmology)
+        self._comoving_transverse_distance=self._compute_transverse_comoving_distance(self._z,self._cosmology)
 	
 
 		
-    def compute_comoving_distance(redshift,cosmology):
-        d=cosmology.comoving_distance(redshift)
-        return d
-
-    def compute_transverse_comoving_distance(redshift,cosmology):
-        d=cosmology.comoving_transverse_distance(redshift)
-        return d
-	
-    def set_cosmology(self,cosmo):
-     #set new Cosmology,  cosmo should be astropy cosmological model, default is Planck 18 """
-	    self._cosmology = asco.cosmo
-	
-	
+    def _compute_comoving_distance(self,redshift,cosmology):
+        # compute comoving distance for each object
+        return cosmology.comoving_distance(redshift)
         
+
+    def _compute_transverse_comoving_distance(self,redshift,cosmology):
+        # compute transverse comoving distance for each object
+        return cosmology.comoving_transverse_distance(redshift)
+    
+	
+    def _set_cosmology(self,cosmo):
+        #set new Cosmology,  cosmo should be astropy cosmological model, default is Planck 18
+	    self._cosmology = cosmo
+	  
         	
     @property
     def object_type(self):
@@ -98,31 +117,46 @@ class Catalogue(abc.ABC):
         	
           
 class Galaxies(Catalogue): 
-    """ Galaxy Catalogue Object"""
+
+    """ Galaxy Catalogue Object
+    mag: numpy,array with magnitude or list of magnitude in different band for each object"""
+
     object_type='Galaxy' 
 
     def __init__(self,ra,dec,redshift,redshift_err=None,mass=None,radius=None,mag=None,cosmo=asco.Planck18):
             
-        super().__init__(self,ra,dec,redshift,redshift_err,mass,radius,cosmo=asco.Planck18)
+        super().__init__(ra,dec,redshift,cosmo,redshift_err,mass,radius)
         
-        if mag is not None:
-            self._magnitude = mag
         
-        self._data=pd.DataFrame({'RA':self._ra,
+        dict_data =             {'ID': self._objID,
+                                'RA':self._ra,
                                 'Dec':self._dec,
                                 'redshift': self._z,
-                                'redshift_err': self._redshift_err,
-                                'Radius':self._radius,
-                                'Mass':self._mass,
-                                'magnitude': self._magnitude,
                                 'Dc':  self._comoving_distance,
                                 'Dm': self._comoving_transverse_distance,
-                                'ID': self._objID})
+                                }
+
+        if redshift_err is not None:
+            dict_data['redshift_err']=self._redshift_err  
+
+        if mag is not None:
+            self._magnitude = mag
+            dict_data['magnitude'] = mag
+            
+        if mass is not None:
+            dict_data['mass']=self._mass
+                
+        if radius is not None:
+            dict_data['radius']=self._radius
+        
+        self._data=pd.DataFrame(dict_data)
+
 
     #AION TO CALCULATE THE PARAMETRS THAT CORRECT FOR SURFACE BRIGHTNESS MODULATION
     
     
     def get(self,key=None,objid=None):
+        # Give key or ObjID to return the desire data from the catalog
         if key is not None and objid is None:
             return self._data.loc[:,key]
         elif objid is not None and key is not None:
@@ -153,33 +187,49 @@ class Cluster(Catalogue):
     _object_type='Cluster'
 	
 
-    def __init__(self,ra,dec,redshift,redshift_err=None,mass=None,radius=None,concentration=None,fr0=None,
+    def __init__(self,ra,dec,redshift,cosmo=asco.Planck18,redshift_err=None,mass=None,radius=None,concentration=None,fr0=None,
                 compute_radius=False,compute_conc=False,convert_to_fr=False,is_crit=True,
-                seed=1234,delta=500,cosmo=asco.Planck18,gravity='GR'):
+                delta=500,gravity='GR', seed=1234):
             
-        super().__init__(self,ra,dec,redshift,redshift_err,mass,radius,cosmo=asco.Planck18)
-            
-        set_Delta(delta)
-        set_gravitymodel(gravity)
-        self._is_crit=is_crit
+        super().__init__(ra,dec,redshift,cosmo,redshift_err,mass,radius)
+        
+        if delta is None:
+            raise ValueError('define a delta')
+        else:
+            self._set_Delta(delta)
+
+        if gravity is None:
+            raise ValueError('define the gravity model, available model [GR, f(R)]')
+        else:
+            self._set_gravitymodel(gravity)
+        
+        if is_crit is None:
+            raise ValueError('define if the masses are measured respect to the critical or mean density')
+        else:
+            self._is_crit = is_crit
+
+        if gravity not in ['GR', 'f(R)']:
+            raise ValueError ('gravity model not implemented')
         if gravity != 'GR' and fr0 is None:
             raise ValueError('set Fr0 if you are using f(R) gravity')
         elif gravity == 'GR' and fr0 is not None:
             raise ValueError('fr0 has to be None in GR')
         elif gravity != 'GR' and fr0 is not None:
-            set_Fr0(fr0)
+            self._set_Fr0(fr0)
+                
+        if self._mass is None:
+            raise ValueError('provide masses of the clusters (not logritmic scale)')       
+        else:
+            print('if the masses are in logharitmic scale, please change it or the code will not work')
 
         if self._radius is None and compute_radius:
             self._radius=ut.halo_radius(self._mass,self._z,self._Delta,self._cosmology,self._is_crit)
-                
-        if self._mass is not None:
-            print('if the masses are in logharitmic scale, please change it or the code will not work')
                 
         if concentration is not None:
             self._concentration=concentration
 
         elif concentration is None and compute_conc:
-            self._concentration=compute_concentration(seed)
+            self._concentration=self.compute_concentration(seed)
                
         if  gravity == 'GR' and convert_to_fr:
             raise ValueError('please select gravity=f(R) if you want to convert quantities from GR to f(r)')
@@ -196,16 +246,26 @@ class Cluster(Catalogue):
                 self._mass=ut.convert_mass_GRtofR(self._mass,self._z,self._Fr0,self._cosmology)
                 self._radius=ut.halo_radius(self._mass,self._z,self._Delta,self._cosmology,self._is_crit)
 
-        self._data=pd.DataFrame({'RA':self._ra,
+        dict_data =             ({'ID': self._objID,
+                                'RA':self._ra,
                                 'Dec':self._dec,
                                 'redshift': self._z,
-                                'redshift_err': self._redshift_err,
-                                'R_'+str(delta):self._radius,
                                 'M_'+str(delta):self._mass,
-                                'c_'+str(delta):self._concentration,
-                                'Dc':  self._comoving_distance,
-                                'Dm': self._comoving_transverse_distance,
-                                'ID': self._objID})
+                                'Dc': self._comoving_distance,
+                                'Dm': self._comoving_transverse_distance
+                                })
+
+        if redshift_err is not None:
+            dict_data['redshift_err'] = self._redshift_err
+
+        if self._radius is not None:
+            dict_data['R_'+str(delta)]=self._radius
+        
+        if self._concentration is not None:
+            dict_data['c_'+str(delta)]=self._concentration
+
+        self._data=pd.DataFrame(dict_data)
+
 
 
                                           
@@ -221,12 +281,12 @@ class Cluster(Catalogue):
             
             
     def compute_concentration(self,seed):            
-        if self._Delta==200:
+        if self._Delta==200.:
             c200=ut.Duffy_NFW_conc(self._mass,self._redshift,'200')
             return c200
 
-        elif self._Delta==500:
-            return ut.compute_c500(self._z,self._mass)
+        elif self._Delta==500.:
+            return ut.compute_c500(self._z,self._mass,seed)
 
         else:
             raise ValueError('200 and 500 are the only value of Delta allowed')
@@ -267,7 +327,7 @@ class Cluster(Catalogue):
         
 
         dat=dat[np.abs(dat.V)<=v_cut & dat.dist<=r_cut]
-        
+       
         count=dat.groupby('IDclust').count()
         mean_pos=dat.groupby('IDclust')[['RAgal','DECgal']].mean()
 
@@ -282,13 +342,13 @@ class Cluster(Catalogue):
     
 
             
-    def set_delta(self,delta):
-	    self._Delta=delta
+    def _set_delta(self,delta):
+	    self._Delta = delta
 	
-    def set_gravitymodel(self,grav):
+    def _set_gravitymodel(self,grav):
 	    self._GravityModel = grav
 
-    def set_Fr0(self,fr0):
+    def _set_Fr0(self,fr0):
             self._Fr0=fr0
             
     @property
