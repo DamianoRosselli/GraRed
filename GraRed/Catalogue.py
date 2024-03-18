@@ -9,6 +9,7 @@ from astropy import units as u
 from astropy import constants as cst
 from . import utils as ut
 import abc
+import tqdm
 
 
 class Catalogue(abc.ABC): 
@@ -196,7 +197,7 @@ class Cluster(Catalogue):
         if delta is None:
             raise ValueError('define a delta')
         else:
-            self._set_Delta(delta)
+            self._set_delta(delta)
 
         if gravity is None:
             raise ValueError('define the gravity model, available model [GR, f(R)]')
@@ -229,7 +230,10 @@ class Cluster(Catalogue):
             self._concentration=concentration
 
         elif concentration is None and compute_conc:
-            self._concentration=self.compute_concentration(seed)
+            self._concentration=self.compute_concentration(seed=seed)
+
+        else:
+            self._concentration=None
                
         if  gravity == 'GR' and convert_to_fr:
             raise ValueError('please select gravity=f(R) if you want to convert quantities from GR to f(r)')
@@ -242,7 +246,7 @@ class Cluster(Catalogue):
                 raise ValueError('radius to be converted are not in the Catalogue')
             else:
                 print('attention convertion works only if M500 are given')
-                self._concentration=self.convert_concentration_GRtofR(self._mass,self._z,self._Fr0,self._cosmology)
+                self._concentration=self.convert_concentration_GRtofR(self._mass,self._z,self._Fr0,self._cosmology,seed=seed)
                 self._mass=ut.convert_mass_GRtofR(self._mass,self._z,self._Fr0,self._cosmology)
                 self._radius=ut.halo_radius(self._mass,self._z,self._Delta,self._cosmology,self._is_crit)
 
@@ -269,7 +273,7 @@ class Cluster(Catalogue):
 
 
                                           
-    def convert_concentration_GRtofR(self,mass,redshift,fr0,cosmology):
+    def convert_concentration_GRtofR(self,mass,redshift,fr0,cosmology,seed):
         """ see mitchell et al 2021"""
         if self._Delta==200:
             y=ut.convert_concentration(mass,redshift,fr0,cosmology)
@@ -277,7 +281,7 @@ class Cluster(Catalogue):
         
         elif self._Delta==500:
             y=ut.convert_concentration(mass,redshift,fr0,cosmology)
-            return ut.compute_c500(self._z,self._mass,y)
+            return ut.compute_c500(self._z,self._mass,seed=seed,convert=y)
             
             
     def compute_concentration(self,seed):            
@@ -286,7 +290,7 @@ class Cluster(Catalogue):
             return c200
 
         elif self._Delta==500.:
-            return ut.compute_c500(self._z,self._mass,seed)
+            return ut.compute_c500(self._z,self._mass,seed=seed,convert=None)
 
         else:
             raise ValueError('200 and 500 are the only value of Delta allowed')
@@ -305,42 +309,142 @@ class Cluster(Catalogue):
             raise ValueError('give a key or objID to select somenthing in self._data')
             
             
-    def compute_cluster_center(self, galaxy_data, radians=False, v_cut=2500., r_cut=1., **kwargs):      
+    def compute_center(self, galaxy_data, radians=False, v_cut=2500., r_cut=1.):      
         
-        RAgal = [row.RA for row in galaxy_data.itertuples()]
-        DECgal = [row.Dec for row in galaxy_data.itertuples()]
-        Zgal = [row.redshift for row in galaxy_data.itertuples()]
+        if not radians:
+            RAcl= np.radians(self._data.RA)
+            Deccl= np.radians(self._data.RA)
+            RAgal= np.radians(galaxy_data['RA'].values)
+            DECgal= np.radians(galaxy_data['Dec'].values)
+
+        else:
+            RAgal= galaxy_data['RA'].values
+            DECgal= galaxy_data['Dec'].values
+            RAcl= self._data.RA.values
+            Deccl= self._data.Dec.values
+
+        pos_cl  = np.array([RAcl,Deccl]).T
+        pos_gal  = np.array([RAgal,DECgal]).T
+
+        dist = ut.dist_skyobj(pos_cl,pos_gal,dm1=self._data.Dm.values,r5=self._data['R_'+str(self._Delta)].values,Mpc=True,arcsec=False,normalized=True)
+        vel = ut.vlos_center(self._data.redshift.values, galaxy_data.redshift.values)
+
+        dist_mask = dist < r_cut
+        vel_mask = vel < v_cut
+        mask = dist_mask & vel_mask
+
+        
+        return mask
+
+
+    def compute_cluster_center(self, galaxy_data, radians=False, v_cut=2500., r_cut=1.): 
+
+        RAgal= galaxy_data['RA'].values
+        DECgal= galaxy_data['Dec'].values
+        RAcl= self._data.RA.values
+        Deccl= self._data.Dec.values
 
         if not radians:
-            self._data['RA rad']= np.radians(self._data.RA)
-            self._data['Dec rad']= np.radians(self._data.RA)
+            RAcl= np.radians(RAcl)
+            Deccl= np.radians(Deccl)
             RAgal= np.radians(RAgal)
             DECgal= np.radians(DECgal)
 
-        r=[ut.dist_between_2obj(row.RA,row.DEC,RAgal,DECgal,**kwargs) for row in self._data.itertuples()]
-        v=[ut.vlos_center(row.redshift,Zgal) for row in self._data.itertuples()]
-
-        dat=pd.DataFrame({'dist':r,
-                          'V':v,
-                          'IDclust': np.sort([self._objID for i in RAgal])})
-                          #add ragal dec gal
         
 
-        dat=dat[np.abs(dat.V)<=v_cut & dat.dist<=r_cut]
-       
-        count=dat.groupby('IDclust').count()
-        mean_pos=dat.groupby('IDclust')[['RAgal','DECgal']].mean()
+        zcl = self._data['redshift'].values
+        zgal = galaxy_data['redshift'].values
 
+        centre_ra=[]
+        centre_dec=[]
+        centre_z=[]
+        num=[]
+        
+        for i in range(len(RAcl)):
+            
+	        r = ut.dist_sky(RAcl[i],Deccl[i],RAgal,DECgal,self._data.Dm.values[i],self._data['R_'+str(self._Delta)].values[i],
+            Mpc=True,arcsec=False,normalized=True)
 
+	        v = ut.vlos(zcl[i],zgal)
 
+	        idv = np.where((np.abs(v)<v_cut)&(r<=r_cut))
 
-        decbo2=np.append(decbo[idv],dec[i])
-        centre_ra=np.append(centre_ra,np.mean(rabo2))
-        num=np.append(num,len(rabo2)) 
+	        
+	        centre_ra.append(np.mean(np.append(RAgal[idv],RAcl[i])))
+	        centre_dec.append(np.mean(np.append(DECgal[idv],Deccl[i])))
+	        centre_z.append(np.mean(np.append(zgal[idv],zcl[i])))
+	        num.append(len(RAgal[idv])+1)
+	
+        self._data['new_RA'] = centre_ra
+        self._data['new_Dec'] = centre_dec
+        self._data['new_redshift'] = centre_z
+        self._data['num_mean_centr'] = num
+        
+
+    def compute_vel_distr(self,galaxy_data,radians=False, v_cut=4000., r_cut=4.,Mpc=True,arcsec=False,normalized=True,new=True):
+
+        if new:
+            RAcl= self._data.new_RA.values
+            Deccl= self._data.new_Dec.values
+            zcl = self._data['new_redshift'].values
             
 
-    
+        else:
+            RAcl= self._data.RA.values
+            Deccl= self._data.Dec.values
+            zcl = self._data['redshift'].values
 
+        RAgal= galaxy_data['RA'].values
+        DECgal= galaxy_data['Dec'].values
+        zgal = galaxy_data['redshift'].values
+        
+        if not radians:
+            RAcl= np.radians(RAcl)
+            Deccl= np.radians(Deccl)
+            RAgal= np.radians(RAgal)
+            DECgal= np.radians(DECgal)
+
+        
+        vgal = []
+        dist = []
+        ngal = []
+
+        for i in range(len(RAcl)):
+
+            if new:
+                if not radians:
+                    ra= np.append(RAgal,np.radians(self._data.RA.values[i]))
+                    dec= np.append(DECgal,np.radians(self._data.Dec.values[i]))
+                else:
+                    ra= np.append(RAgal,self._data.RA.values[i])
+                    dec= np.append(DECgal,self._data.Dec.values[i])
+
+                z = np.append(zgal,self._data['redshift'].values[i])
+                
+                r = ut.dist_sky(RAcl[i],Deccl[i],ra,dec,self._data.Dm.values[i],self._data['R_'+str(self._Delta)].values[i],
+                Mpc=Mpc,arcsec=arcsec,normalized=normalized)
+                v = ut.vlos(zcl[i],z)
+
+            else:
+                r = ut.dist_sky(RAcl[i],Deccl[i],RAgal,DECgal,self._data.Dm.values[i],self._data['R_'+str(self._Delta)].values[i],
+                Mpc=Mpc,arcsec=arcsec,normalized=normalized)
+                v = ut.vlos(zcl[i],zgal)
+
+            idv = np.where((np.abs(v)<v_cut)&(r<=r_cut))
+            vgal.append(v[idv])
+            dist.append(r[idv])
+            ngal.append(len(v[idv]))
+
+
+	
+        self._data['dist_member'] = dist
+        self._data['vel_member'] = vgal
+        self._data['num_member'] = ngal
+       
+	
+	
+        	
+		
             
     def _set_delta(self,delta):
 	    self._Delta = delta

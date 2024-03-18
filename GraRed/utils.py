@@ -3,25 +3,30 @@ from astropy import constants as cst
 import scipy
 from scipy.special import erf
 from scipy.optimize import fsolve,root
-
+from scipy.interpolate import InterpolatedUnivariateSpline as spline
+from scipy.spatial.distance import cdist
 light_vel=cst.c.to('km/s').value
 
 def g(c):
     return np.log(1+c)-(c/(1+c))
 
-def c500_inter(x,m5,m2,c2):
+def c500_interp(x,m5,m2,c2):
     return (m2/m5)*g(x)-g(c2)
 
+def vlos(zcen,zgal):
+    vl = np.log(1+zgal) - np.log(1+zcen)
+    return vl*light_vel
 
 def vlos_center(z1,z2):
     # z1 cluster center redshift, z2 galaxy redshift
-    vl=(np.log(1+z2)-np.log(1+z1))
+    vl = cdist(z1.reshape(-1,1), z2.reshape(-1,1), metric=lambda x, y: np.log(1+y)-np.log(1+x))
     return vl*light_vel
 
 def vlos_err(z1,z2,dz1,dz2):
     err1=dz1/(1+z1)
     err2=dz2/(1+z2)
-    return np.sqrt(err1**2+err2**2)*light_vel
+    vl_err = cdist(err1.reshape(-1,1), err2.reshape(-1,1), metric=lambda x, y: np.sqrt(x**2 + y**2))
+    return vl_err*light_vel
 
 def comoving_distance(z,cosmology):
     return cosmology.comoving_distance(z)
@@ -29,14 +34,42 @@ def comoving_distance(z,cosmology):
 def comoving_transverse_distance(z,cosmology):
     return cosmology.comoving_transverse_distance(z)
 
-def dist_between_2obj(ra,dec,ra2,dec2,dm1=None,r5=None,Mpc=True,arcsec=False,normalized=True):
-    	# ra, dec = angular coordinates of cluster center in radians
-    	#ra2, dec2= angular coordinates of galaxies in radians
+def dist_skyobj(u,v,dm1=None,r5=None,Mpc=True,arcsec=False,normalized=True):
+    	# u = angular coordinates of cluster center in radians
+    	#v = angular coordinates of galaxies in radians
     	# dm1 = comoving transverse distance in Mpc
-    lat=dec2-dec
-    longh=ra2-ra
-    a=np.square(np.sin(lat*0.5))
-    b=np.cos(dec2)*np.cos(dec)*np.square(np.sin(longh*0.5))
+
+    
+    a = cdist(u[:,1].reshape(-1,1), v[:,1].reshape(-1,1), metric=lambda x, y: np.sin((y-x)*0.5)**2)
+
+    b= cdist(u[:,0].reshape(-1,1), v[:,0].reshape(-1,1), metric=lambda x, y: np.cos(x)*np.cos(y)*(np.sin((y-x)*0.5))**2)
+    
+    theta=2*np.arcsin(np.sqrt(a+b))
+    
+    if Mpc and arcsec:
+        raise ValueError('choose the distance in Mpc or arcesc?')
+
+    elif Mpc and not arcsec:
+        if dm1 is None:
+            raise ValueError('give transverse comoving ditance in Mpc')
+        else:
+            d=(theta.T*np.array(dm1)).T
+
+    elif not Mpc and arcesc:
+        d= theta * 206264.806
+        
+    if not normalized:
+        return d
+    elif normalized:
+        if r5 is None:
+            raise ValueError('give the radius to normalize the distances')
+        else:
+            return (d.T/r5).T
+
+def dist_sky(racl,deccl,ragal,decgal,dm1=None,r5=None,Mpc=True,arcsec=False,normalized=True):
+    	
+    a = np.sin((0.5*(decgal-deccl))**2)
+    b = np.cos(racl)*np.cos(ragal)*(np.sin((ragal-racl)*0.5))**2
     theta=2*np.arcsin(np.sqrt(a+b))
     
     if Mpc and arcsec:
@@ -49,7 +82,7 @@ def dist_between_2obj(ra,dec,ra2,dec2,dm1=None,r5=None,Mpc=True,arcsec=False,nor
             d=theta*dm1
 
     elif not Mpc and arcesc:
-        d= theta** 206264.806
+        d= theta * 206264.806
         
     if not normalized:
         return d
@@ -58,7 +91,6 @@ def dist_between_2obj(ra,dec,ra2,dec2,dm1=None,r5=None,Mpc=True,arcsec=False,nor
             raise ValueError('give the radius to normalize the distances')
         else:
             return d/r5
-
 
 def P2mitchell(fr0,redshift,cosmology):
     fracomega=cosmology.Ode0/cosmology.Om0
@@ -105,49 +137,44 @@ def convert_mass_GRtofR(mass,redshift,fr0,cosmology):
 def halo_radius(mass,redshift,delta,cosmology,is_crit):
     
     if is_crit:
-        rhoc=cosmology.critical_density(redshift).value()
+        rhoc=cosmology.critical_density(redshift).value
     else:
-        rhoc=cosmology.critical_density(redshift).value()/cosmology.Odm(redshift)
+        rhoc=cosmology.critical_density(redshift).value/cosmology.Odm(redshift)
 
     rhoc=rhoc*6.77*1.e41
     c=4*np.pi*delta*rhoc
     return np.power((mass*3)/c,1./3.)
     
 
-def compute_c500(z,m500,seed=1234, covert=None):
+def compute_c500(z,m500,seed=1234, convert=None):
 
     logM_min=np.log10(np.min(m500))
     logM_max=np.log10(np.max(m500))
-    sample_m=np.logspace(logM_min-1,logM_max+1,50000)
+    sample_m=np.logspace(logM_min-1,logM_max+1,500000)
     rand_gen = np.random.default_rng(seed)
+
+    msample=rand_gen.choice(sample_m,size=len(z),replace=False)
     
-    c500=np.empty(len(z),dtype=float)
+    del sample_m
+    c200=Duffy_NFW_conc(msample,z,'200')
+    if convert is not None:
+        c200 *= (10**convert)
     
-    for i in range(len(z)):
-                    
-        msample=rand_gen.choice(sample_m,size=0.1*len(sample_m),replace=False)
-        c200=Duffy_NFW_conc(msample,z,'200')
-        if convert is not None:
-            c200=c200*(10**covert[i])
+    m500c = {i: np.asarray([Mass_Delta(m,200,500,c,True)[0] for m,c in zip(msample,c200)]) for i,zz in enumerate(z) }
+    
+    ff = [spline(np.sort(m500c[k]),msample[np.argsort(m500c[k])]) for k in m500c.keys()]
+    m200c= {i: f(m500[i]) for i,f in enumerate(ff)}
+    c200c = np.asarray([Duffy_NFW_conc(m200c[k],z[k],'200') for k in m500c.keys()]) 
 
-        m500c=np.asarray([Mass_Delta(msample[j],200,500,c200[j],True) for j in range(len(msample))])
-                     
-        zz = np.polyfit(m500c,msample, 1)
-        f = np.poly1d(zz)
-                     
-        m200c=f(m500[i])
-        
-        c200c=Duffy_NFW_conc(m200c,z[i],'200')
+    if convert is not None:
+        c200c*=(10**convert)
 
-        if convert is not None:
-            c200c=c200c*(10**covert[i])
-
-        c500ok=fsolve(c500_inter,1,args=(m500[i],m200c,c200c),maxfev=2000)
-        c500[i]=c500ok
+    c500=[fsolve(c500_interp,1,args=(m500[k],m200c[k],c200c[k]),maxfev=2000)[0] for k in m200c.keys()]
+    
     return c500
 
 def Mass_Delta(mass,delta_in,delta_out,conc,is_input):
-    ratio=fsolve(mass_inter, 1.,args=(delta_in,delta_out,conc,is_input),maxfev=2000)
+    ratio=fsolve(mass_interp, 1.,args=(delta_in,delta_out,conc,is_input),maxfev=2000)
     return mass*((delta_out/delta_in)/np.power(ratio, 3))
 
 def mass_interp(xx,delta_in,delta_out,conc,is_input):
