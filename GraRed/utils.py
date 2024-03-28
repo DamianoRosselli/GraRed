@@ -34,10 +34,16 @@ def comoving_distance(z,cosmology):
 def comoving_transverse_distance(z,cosmology):
     return cosmology.comoving_transverse_distance(z)
 
-def dist_skyobj(u,v,dm1=None,r5=None,Mpc=True,arcsec=False,normalized=True):
+def dist_skyobj(u,v,dm1=None,r5=None,Mpc=True,arcsec=False,normalized=True,radians=False):
     	# u = angular coordinates of cluster center in radians
     	#v = angular coordinates of galaxies in radians
     	# dm1 = comoving transverse distance in Mpc
+
+    if not radians:
+    	racl= np.radians(racl)
+    	deccl= np.radians(deccl)
+    	ragal= np.radians(ragal)
+    	decgal= np.radians(decgal)
 
     
     a = cdist(u[:,1].reshape(-1,1), v[:,1].reshape(-1,1), metric=lambda x, y: np.sin((y-x)*0.5)**2)
@@ -66,8 +72,15 @@ def dist_skyobj(u,v,dm1=None,r5=None,Mpc=True,arcsec=False,normalized=True):
         else:
             return (d.T/r5).T
 
-def dist_sky(racl,deccl,ragal,decgal,dm1=None,r5=None,Mpc=True,arcsec=False,normalized=True):
-    	
+def dist_sky(racl,deccl,ragal,decgal,dm1=None,r5=None,Mpc=True,arcsec=False,normalized=True,radians=False):
+    	  
+   
+    if not radians:
+    	racl= np.radians(racl)
+    	deccl= np.radians(deccl)
+    	ragal= np.radians(ragal)
+    	decgal= np.radians(decgal)
+   
     a = np.sin((0.5*(decgal-deccl))**2)
     b = np.cos(racl)*np.cos(ragal)*(np.sin((ragal-racl)*0.5))**2
     theta=2*np.arcsin(np.sqrt(a+b))
@@ -214,3 +227,6 @@ def Duffy_NFW_conc(mass,redshift,halo_def):
    
     return AA*np.power(mass/Mpivot, BB)*np.power(1.+redshift, CC)
        
+       
+
+
